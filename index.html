@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Snake</title>
+	<link rel="stylesheet" type="text/css" href="./reset.css" />
+	<style>
+		@import url("https://fonts.googleapis.com/css?family=Open Sans");
+
+		body {
+			font-family: "Open Sans";
+			color: #1D4A56;
+		}
+
+		#gameContainer {
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			width: 100vw;
+			height: 100vh;
+			background-color: #D3EAF0;
+		}
+
+		#game {
+			position: relative;
+			border: 2px solid #8CC8D9;
+			border-radius: 16px;
+		}
+
+		.snakePart {
+			position: absolute;
+			z-index: 20;
+			background-color: #51ACC5;
+			transform: scale(0.9);
+			border-radius: 16px;
+			transition: left .05s linear, top .05s linear;
+			left: 0;
+			top: 0;
+		}
+
+		.treat {
+			position: absolute;
+			z-index: 10;
+			background-color: #8CC8D9;
+			transform: translate(50%, 50%);
+			border-radius: 8px;
+		}
+
+		.startScreen {
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			height: 100%;
+		}
+
+		.isBestScore {
+			font-weight: bold;
+		}
+
+		.startButton {
+			border: none;
+			width: 200px;
+			height: 50px;
+			background-color: #51ACC5;
+			cursor: pointer;
+			border-radius: 8px;
+			margin-top: 16px;
+		}
+
+		.startButton:hover {
+			background-color: #61BCD5;
+		}
+	</style>
+</head>
+<body>
+	<div id="gameContainer">
+		<div id="game">
+		</div>
+	</div>
+</body>
+
+<script type="text/javascript">
+	const gameSize = 512
+	const gameDivider = 8
+
+	let gameInterval
+	let gameElement = document.querySelector("#game")
+	let score = 0
+
+	function resetScreen() {
+		gameElement.innerHTML = ""
+	}
+
+	function initStartScreen(isNewBestScore = false) {
+		resetScreen()
+
+		let startScreenElement = document.createElement("div")
+		startScreenElement.className = "startScreen"
+
+		let scoreElement = document.createElement("p")
+		scoreElement.textContent = `Score: ${score} (best: ${localStorage.snakeBestScore || 0})`
+
+		let bestScoreElement
+		if (isNewBestScore) {
+			bestScoreElement = document.createElement("p")
+			bestScoreElement.className = "isBestScore"
+			bestScoreElement.textContent = `New best score! Well done :)`
+		}
+
+		let startButtonElement = document.createElement("button")
+		startButtonElement.className = "startButton"
+		startButtonElement.textContent = "START"
+		startButtonElement.onclick = initGame
+
+		startScreenElement.append(scoreElement)
+		if (isNewBestScore) startScreenElement.append(bestScoreElement)
+		startScreenElement.append(startButtonElement)
+
+		gameElement.append(startScreenElement)
+	}
+
+	function initGame() {
+		resetScreen()
+
+		score = 0
+
+		async function flickerSnake() {
+			let flickerInterval
+
+			await new Promise((resolve, reject) => {
+				setTimeout(resolve, 1000)
+
+				flickerInterval = setInterval(() => {
+					snake.parts.forEach(snakePart => {
+						snakePart.element.style.display = snakePart.element.style.display === "none" ? "block" : "none"
+					})
+				}, 100)
+			})
+
+			clearInterval(flickerInterval)
+		}
+
+		async function lose() {
+			clearInterval(gameInterval)
+			let isNewBestScore = false
+			if (score > (Number(localStorage.snakeBestScore) || 0)) {
+				localStorage.snakeBestScore = score
+				isNewBestScore = true
+			}
+			await flickerSnake()
+			initStartScreen(isNewBestScore)
+		}
+
+		function getNewSnakeElement() {
+			const element = document.createElement("div")
+
+			element.className = "snakePart"
+			element.style.width = `${gameSize / gameDivider}px`
+			element.style.height = `${gameSize / gameDivider}px`
+
+			return element
+		}
+
+		function getTreatElement() {
+			const element = document.createElement("div")
+
+			element.className = "treat"
+			element.style.width = `${gameSize / gameDivider / 2}px`
+			element.style.height = `${gameSize / gameDivider / 2}px`
+
+			return element
+		}
+
+		function checkHeadPosition(position) {
+			const snakeIsOut = (
+				position.x < 0 ||
+				position.x >= gameDivider ||
+				position.y < 0 ||
+				position.y >= gameDivider
+			)
+			const snakeHitsBody = !!snake.parts.slice(1, snake.parts.length).find(snakePart => snakePart.position.x === position.x && snakePart.position.y === position.y)
+			const snakeHitsTreat = (
+				position.x === treat.position.x &&
+				position.y === treat.position.y
+			)
+
+			if (snakeIsOut || snakeHitsBody) {
+				lose()
+			}
+			if (snakeHitsTreat) {
+				snake.eatTreat()
+			}
+		}
+
+		function moveSnake() {
+			for (let i = 0; i < snake.parts.length; i++) {
+				const snakePart = snake.parts[i]
+
+				if (snakePart.direction === "left") snakePart.position.x--
+				if (snakePart.direction === "right") snakePart.position.x++
+				if (snakePart.direction === "top") snakePart.position.y--
+				if (snakePart.direction === "bottom") snakePart.position.y++
+
+				snakePart.element.style.left = `${gameSize / gameDivider * snakePart.position.x}px`
+				snakePart.element.style.top = `${gameSize / gameDivider * snakePart.position.y}px`
+			}
+
+			checkHeadPosition(snake.parts[0].position)
+
+			for (let i = snake.parts.length - 1; i > 0; i--) {
+				const snakePart = snake.parts[i]
+
+				snakePart.direction = snake.parts[i - 1].direction
+			}
+		}
+
+		function moveTreat() {
+			treat.element.style.left = `${gameSize / gameDivider * treat.position.x}px`
+			treat.element.style.top = `${gameSize / gameDivider * treat.position.y}px`
+		}
+
+		function getNewTreatPosition() {
+			let availablePositions = []
+
+			for (let x = 0; x < gameDivider; x++) {
+				for (let y = 0; y < gameDivider; y++) {
+					const snakeOccupiesCoordinates = !!snake.parts.find(snakePart => snakePart.position.x === x && snakePart.position.y === y)
+					if (!snakeOccupiesCoordinates) availablePositions.push({ x, y })
+				}
+			}
+			
+			const newPosition = availablePositions[Math.floor(Math.random() * availablePositions.length)]
+
+			return {
+				x: newPosition.x,
+				y: newPosition.y,
+			}
+		}
+
+		function getNewSnakePart(direction, position) {
+			return {
+				element: getNewSnakeElement(),
+				direction: direction,
+				position: position,
+			}
+		}
+
+		function tick() {
+			moveSnake()
+			moveTreat()
+		}
+
+		document.onkeydown = event => {
+			let newDirection
+
+			const snakeHead = snake.parts[0]
+
+			if (event.code === "ArrowLeft" || event.code === "KeyA") newDirection = "left"
+			if (event.code === "ArrowRight" || event.code === "KeyD") newDirection = "right"
+			if (event.code === "ArrowUp" || event.code === "KeyW") newDirection = "top"
+			if (event.code === "ArrowDown" || event.code === "KeyS") newDirection = "bottom"
+
+			let nextSnakeHeadPosition = {}
+
+			if (newDirection === "left") nextSnakeHeadPosition = { x: snakeHead.position.x - 1, y: snakeHead.position.y }
+			if (newDirection === "right") nextSnakeHeadPosition = { x: snakeHead.position.x + 1, y: snakeHead.position.y }
+			if (newDirection === "top") nextSnakeHeadPosition = { y: snakeHead.position.y - 1, x: snakeHead.position.x }
+			if (newDirection === "bottom") nextSnakeHeadPosition = { y: snakeHead.position.y + 1, x: snakeHead.position.x }
+
+			const wouldCollideWithSecondPart = (
+				snake.parts[1] &&
+				(
+					nextSnakeHeadPosition.x === snake.parts[1].position.x &&
+					nextSnakeHeadPosition.y === snake.parts[1].position.y
+				)
+			)
+
+			if (!wouldCollideWithSecondPart) snakeHead.direction = newDirection
+		}
+
+		let snake = {
+			parts: [
+				getNewSnakePart("right", { x: 1, y: 1 }),
+			],
+			eatTreat: () => {
+				score++
+
+				treat.position = getNewTreatPosition()
+
+				const snakeTail = snake.parts[snake.parts.length - 1]
+				const newSnakePosition = {
+					x: (
+						snakeTail.direction === "left" ? (snakeTail.position.x + 1) :
+						snakeTail.direction === "right" ? (snakeTail.position.x - 1) :
+						snakeTail.position.x
+					),
+					y: (
+						snakeTail.direction === "top" ? (snakeTail.position.y + 1) :
+						snakeTail.direction === "bottom" ? (snakeTail.position.y - 1) :
+						snakeTail.position.y
+					)
+				}
+				const newSnakePart = getNewSnakePart(snakeTail.direction, newSnakePosition)
+				newSnakePart.element.style.opacity = 1 - (snake.parts.length / 50)
+				snake.parts.push(newSnakePart)
+				newSnakePart.element.style.left = `${gameSize / gameDivider * newSnakePart.position.x}px`
+				newSnakePart.element.style.top = `${gameSize / gameDivider * newSnakePart.position.y}px`
+				gameElement.appendChild(newSnakePart.element)
+			}
+		}
+		snake.parts[0].element.style.left = `${gameSize / gameDivider * snake.parts[0].position.x}px`
+		snake.parts[0].element.style.top = `${gameSize / gameDivider * snake.parts[0].position.y}px`
+
+		let treat = {
+			element: getTreatElement(),
+			position: getNewTreatPosition(),
+		}
+		moveTreat()
+
+		gameElement.appendChild(snake.parts[0].element)
+		gameElement.appendChild(treat.element)
+
+		setTimeout(() => gameInterval = setInterval(tick, 200), 500)
+	}
+
+	gameElement.style.width = `${gameSize}px`
+	gameElement.style.height = `${gameSize}px`
+
+	initStartScreen()
+</script>
+</html>
